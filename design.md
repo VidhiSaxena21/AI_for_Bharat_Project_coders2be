@@ -1,67 +1,691 @@
-# Packaged Food Scanner  
-  
-- **Regulatory context:** In India, FSSAI’s 2020 labelling rules require all major allergens (gluten, crustaceans, milk, eggs, fish, peanuts/tree nuts, soy, and sulfites) to be explicitly declared on packaged foods【3†L830-L838】. This means our app can rely on packaging labels to flag allergens. Note that oils derived from allergenic sources are exempt (e.g. peanut oil)【3†L830-L838】. By scanning a barcode or photographing the packaging, the app can read the ingredient list and compare it against the user’s allergy profile.  
-- **Barcode scanning:** The app will use a barcode/QR scanner (e.g. ZXing or Scandit SDK) to capture the product’s UPC/EAN. Using an API (such as OpenFoodFacts), we can look up product details. OpenFoodFacts’ API provides information on ingredients and nutrition for millions of products worldwide【11†L139-L147】, which can be queried by barcode. (OpenFoodFacts is crowd-sourced but open-source and often used in hackathons.) We could also explore APIs like **Fitterfly Nutrition API** (offers 30,000+ Indian foods with nutritional data)【18†L128-L131】. If a scanned barcode is not found, fallback to **OCR**: use Google ML Kit or Vision API to perform text recognition on the package image, extracting the ingredient list text (the app can prompt the user to focus on the ingredients section).  
-- **Ingredients database and alert:** Once we have ingredients text, we parse it and match keywords against the user’s allergy list. For example, “contains peanuts, milk” triggers alerts. Based on matches, display a clear indicator: **🟢 Safe** (no allergens detected), **🟡 Caution** (potential cross-contamination phrases like “may contain X”), or **🔴 Not Safe** (allergen found) next to the product image. These labels directly correlate with packaging requirements【3†L830-L838】. For ingredient lookup, we cite databases or APIs (OpenFoodFacts) that can parse ingredient lists【11†L139-L147】. 
-- **User flow example:** User scans a pack of cookies; the app captures the barcode and fetches its data. The ingredients text (e.g. “wheat flour, sugar, peanuts, vegetable oil…”) is read. The app compares to the user’s profile. If peanut allergy is in the profile, the app flags 🔴 “Not Safe: contains peanut” immediately. This instant feedback helps users avoid unsafe foods.  
-- **Tech stack:** For Android/iOS, we can use Flutter or React Native for cross-platform development. Use the device camera for scanning (via ZXing or platform camera APIs + Google ML Kit). For backend, Node.js or Python with an Express/Flask API can query OpenFoodFacts or a custom ingredients DB. The backend stores the user’s allergy profile and may cache ingredients data for faster lookup. We’d host it on a cloud (Firebase or AWS) for reliability.  
-- **Data models (example):** A `Users` collection stores each user’s allergy list and emergency contacts. A `Products` cache can map barcodes to ingredient lists and allergen flags. For instance:  
-  ```json
-  // Users document example (NoSQL)
-  {
-    "userId": "alice123",
-    "allergies": ["peanut", "milk", "gluten"],
-    "emergencyContact": "+919876543210"
+# Design Document: Packaged Food Scanner
+
+## Overview
+
+The Packaged Food Scanner is a cross-platform mobile application built with Flutter or React Native that helps users with food allergies identify allergens in packaged foods, restaurant menus, and street food. The system consists of a mobile client, a backend API service, and integrations with external services for barcode scanning, OCR, product databases, and emergency LLM assistance.
+
+The architecture follows a client-server model where the mobile app handles user interaction and camera operations, while the backend manages data persistence, external API integrations, and allergen matching logic. The system prioritizes user safety by providing clear visual alerts and supporting emergency scenarios.
+
+## Architecture
+
+### System Components
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Mobile Application                       │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │   Barcode    │  │     OCR      │  │   Profile    │      │
+│  │   Scanner    │  │   Scanner    │  │   Manager    │      │
+│  └──────────────┘  └──────────────┘  └──────────────┘      │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │    Menu      │  │  Emergency   │  │    i18n      │      │
+│  │   Scanner    │  │   Assistant  │  │   Manager    │      │
+│  └──────────────┘  └──────────────┘  └──────────────┘      │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            │ HTTPS/REST
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      Backend API Service                     │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │   Barcode    │  │     OCR      │  │   Profile    │      │
+│  │   Handler    │  │   Handler    │  │    API       │      │
+│  └──────────────┘  └──────────────┘  └──────────────┘      │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │   Allergen   │  │   Emergency  │  │    Cache     │      │
+│  │   Matcher    │  │   LLM Proxy  │  │   Manager    │      │
+│  └──────────────┘  └──────────────┘  └──────────────┘      │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            │
+        ┌───────────────────┼───────────────────┐
+        │                   │                   │
+        ▼                   ▼                   ▼
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│   MongoDB/   │  │    Google    │  │ OpenFoodFacts│
+│   Firebase   │  │ Cloud Vision │  │  Fitterfly   │
+└──────────────┘  └──────────────┘  └──────────────┘
+```
+
+### Technology Stack
+
+- **Mobile**: Flutter or React Native for cross-platform development
+- **Backend**: Node.js (Express) or Python (FastAPI)
+- **Database**: MongoDB or Firebase Firestore
+- **OCR**: Google ML Kit (on-device) and Google Cloud Vision API (cloud)
+- **Barcode**: ZXing or Scandit SDK
+- **LLM**: GPT-4o via OpenAI API with medical safety constraints
+- **APIs**: OpenFoodFacts API, Fitterfly Nutrition API
+
+## Components and Interfaces
+
+### Mobile Application Components
+
+#### Barcode Scanner Component
+
+**Responsibilities:**
+- Initialize device camera for barcode scanning
+- Detect and decode barcodes using ZXing/Scandit
+- Send barcode to backend API
+- Display safety alerts based on response
+
+**Interface:**
+```typescript
+interface BarcodeScanner {
+  startScan(): Promise<void>
+  stopScan(): void
+  onBarcodeDetected(barcode: string): Promise<ScanResult>
+}
+
+interface ScanResult {
+  productName: string
+  ingredients: string[]
+  allergens: string[]
+  safetyLevel: 'safe' | 'caution' | 'unsafe'
+  matchedAllergens: string[]
+}
+```
+
+#### OCR Scanner Component
+
+**Responsibilities:**
+- Capture images of ingredient labels or menus
+- Process images with on-device ML Kit or cloud Vision API
+- Extract text in multiple Indian scripts
+- Parse ingredient lists or dish names
+- Send extracted data to backend for allergen matching
+
+**Interface:**
+```typescript
+interface OCRScanner {
+  captureImage(): Promise<ImageData>
+  extractText(image: ImageData, languages: string[]): Promise<string>
+  parseIngredients(text: string): string[]
+  parseDishNames(text: string): string[]
+}
+
+interface ImageData {
+  uri: string
+  base64: string
+  width: number
+  height: number
+}
+```
+
+#### Profile Manager Component
+
+**Responsibilities:**
+- Manage user allergen selections
+- Store and retrieve emergency contact information
+- Persist profile data locally and sync with backend
+- Provide allergen list to scanning components
+
+**Interface:**
+```typescript
+interface ProfileManager {
+  getAllergens(): string[]
+  setAllergens(allergens: string[]): Promise<void>
+  getEmergencyContact(): EmergencyContact
+  setEmergencyContact(contact: EmergencyContact): Promise<void>
+  syncProfile(): Promise<void>
+}
+
+interface EmergencyContact {
+  name: string
+  phone: string
+}
+```
+
+#### Emergency Assistant Component
+
+**Responsibilities:**
+- Provide step-by-step first aid guidance
+- Retrieve GPS location
+- Send alerts to emergency contacts
+- Display medical ID information
+- Interface with LLM for contextual guidance
+
+**Interface:**
+```typescript
+interface EmergencyAssistant {
+  activateEmergency(): Promise<void>
+  getFirstAidSteps(): Promise<string[]>
+  getLocation(): Promise<Location>
+  alertEmergencyContact(location: Location): Promise<void>
+  displayMedicalID(): MedicalID
+  getLLMGuidance(symptoms: string): Promise<string>
+}
+
+interface Location {
+  latitude: number
+  longitude: number
+  accuracy: number
+}
+
+interface MedicalID {
+  allergens: string[]
+  emergencyContact: EmergencyContact
+  bloodType?: string
+}
+```
+
+### Backend API Components
+
+#### Barcode Handler
+
+**Responsibilities:**
+- Receive barcode scan requests
+- Query OpenFoodFacts API
+- Fallback to Fitterfly Nutrition API
+- Cache product data
+- Return product information
+
+**Interface:**
+```typescript
+interface BarcodeHandler {
+  handleBarcodeRequest(barcode: string): Promise<ProductData>
+  queryOpenFoodFacts(barcode: string): Promise<ProductData | null>
+  queryFitterfly(barcode: string): Promise<ProductData | null>
+  cacheProduct(product: ProductData): Promise<void>
+}
+
+interface ProductData {
+  barcode: string
+  name: string
+  ingredients: string[]
+  allergens: string[]
+  source: 'openfoodfacts' | 'fitterfly' | 'cache'
+}
+```
+
+#### OCR Handler
+
+**Responsibilities:**
+- Receive image data from mobile client
+- Process images with Google Cloud Vision API
+- Extract text in multiple languages
+- Parse ingredient lists or dish names
+- Return structured data
+
+**Interface:**
+```typescript
+interface OCRHandler {
+  processImage(imageData: string, type: 'package' | 'menu'): Promise<OCRResult>
+  extractTextFromImage(imageData: string, languages: string[]): Promise<string>
+  parseIngredientList(text: string): string[]
+  parseDishList(text: string): string[]
+}
+
+interface OCRResult {
+  extractedText: string
+  ingredients?: string[]
+  dishes?: string[]
+  confidence: number
+}
+```
+
+#### Allergen Matcher
+
+**Responsibilities:**
+- Compare ingredients/dishes against user allergen profile
+- Determine safety level (safe, caution, unsafe)
+- Identify matched allergens
+- Apply FSSAI exemption rules
+
+**Interface:**
+```typescript
+interface AllergenMatcher {
+  matchAllergens(items: string[], userAllergens: string[]): MatchResult
+  determineSafetyLevel(matchedAllergens: string[]): SafetyLevel
+  applyFSSAIRules(allergens: string[], ingredients: string[]): string[]
+}
+
+interface MatchResult {
+  safetyLevel: SafetyLevel
+  matchedAllergens: string[]
+  warnings: string[]
+}
+
+type SafetyLevel = 'safe' | 'caution' | 'unsafe'
+```
+
+#### Profile API
+
+**Responsibilities:**
+- Store and retrieve user profiles
+- Manage allergen preferences
+- Store emergency contact information
+- Handle profile synchronization
+
+**Interface:**
+```typescript
+interface ProfileAPI {
+  getProfile(userId: string): Promise<UserProfile>
+  updateProfile(userId: string, profile: UserProfile): Promise<void>
+  createProfile(profile: UserProfile): Promise<string>
+}
+
+interface UserProfile {
+  userId: string
+  allergens: string[]
+  emergencyContact: EmergencyContact
+  preferredLanguage: string
+  createdAt: Date
+  updatedAt: Date
+}
+```
+
+#### Emergency LLM Proxy
+
+**Responsibilities:**
+- Interface with GPT-4o API
+- Apply medical safety constraints
+- Generate contextual emergency guidance
+- Filter inappropriate medical advice
+- Log emergency interactions
+
+**Interface:**
+```typescript
+interface EmergencyLLMProxy {
+  getGuidance(symptoms: string, allergens: string[]): Promise<string>
+  validateResponse(response: string): boolean
+  applyMedicalConstraints(prompt: string): string
+}
+```
+
+## Data Models
+
+### User Profile Schema
+
+```typescript
+{
+  userId: string,              // Unique identifier
+  allergens: string[],         // List of user allergens
+  emergencyContact: {
+    name: string,
+    phone: string
+  },
+  preferredLanguage: string,   // ISO language code
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+### Product Schema
+
+```typescript
+{
+  barcode: string,             // Product barcode
+  name: string,                // Product name
+  ingredients: string[],       // List of ingredients
+  allergens: string[],         // Declared allergens
+  source: string,              // Data source
+  lastUpdated: Date,
+  languages: {                 // Multi-language support
+    [languageCode: string]: {
+      name: string,
+      ingredients: string[]
+    }
   }
-  ```  
-  ```json
-  // Cached product document example
-  {
-    "barcode": "8901020401806",
-    "name": "Sample Cookies",
-    "ingredients": ["wheat flour", "sugar", "milk", "groundnut"],
-    "contains": ["gluten","milk","peanuts"]
+}
+```
+
+### Dish Schema
+
+```typescript
+{
+  dishId: string,              // Unique identifier
+  name: string,                // Dish name
+  allergens: string[],         // Common allergens in dish
+  region: string,              // Indian region/cuisine
+  languages: {                 // Multi-language names
+    [languageCode: string]: string
+  },
+  commonIngredients: string[]
+}
+```
+
+### Scan History Schema
+
+```typescript
+{
+  scanId: string,
+  userId: string,
+  type: 'barcode' | 'package_ocr' | 'menu',
+  timestamp: Date,
+  result: {
+    productName?: string,
+    dishes?: string[],
+    safetyLevel: SafetyLevel,
+    matchedAllergens: string[]
   }
-  ```  
-- **APIs:** 1) `GET /scan/barcode?code={barcode}` – returns product info and allergen match. 2) `POST /scan/image` – accepts an image, returns OCR’d ingredients and allergens. 3) `GET /profile` and `POST /profile` – to read/update allergy profile. Use secure auth (OAuth or Firebase Auth) to protect user data.  
-- **India-specific notes:** FSSAI does not mandate precautionary “may contain” labeling, and many consumers rely on apps for warnings【35†L31-L40】. Also note many oils (peanut oil) aren’t labeled as allergen by law【3†L830-L838】, so our app must carefully interpret “ingredients.”  
+}
+```
 
-# Menu & Street Food Scanner  
-- **Challenges:** Street foods and restaurant menus often lack detailed ingredients/allergen info. Menus may be in regional scripts or display dish names only. We’ll solve this with **OCR + AI mapping**.  
-- **OCR for text:** The user can photograph a menu or stall sign. We use Google ML Kit’s Text Recognition (which supports English and Devanagari scripts, including Hindi, Marathi, Nepali【30†L284-L292】) or Google Cloud Vision API (which also supports Tamil, Telugu, and Bengali【47†L1-L4】). Extracted text might include dish names like “Aloo Tikki Chaat.”  
-- **Food name to allergens:** Once we have dish names, the app uses a **dish-to-allergen database** (we may seed it with common Indian recipes and their typical allergens). For example, a known mapping could say **“Aloo Tikki Chaat”** often includes peanuts in chutneys and dairy (curd)【20†L83-L85】. Indeed, menu disclosures (e.g. The Samosa Factory) list peanuts and milk for this dish【20†L83-L85】. The app will parse recognized names, match them to database entries, and highlight allergens. We may use fuzzy matching or a translation layer to match local names (e.g. in Hindi or Punjabi) to our database (e.g. “आलू टिक्की चाट”).  
-- **Example flow:** User photographs a menu. OCR reads “Aloo Tikki Chaat – ₹70”. The app’s parser recognizes “Aloo Tikki Chaat” and checks its database: it finds “peanut” and “milk” listed as allergens. The app then shows a ⚠️ warning and a note “contains peanuts and dairy” near that menu item. This quick photo->info workflow helps the user spot hidden allergens.  
-- **Tech considerations:** We’ll likely need a small AI model or rules to map OCR text to dish names (food recognition is hard due to variations, but OCR on a printed menu is reliable). To handle local scripts, we can integrate i18n and language hints: e.g. if OCR yields Devanagari, map that to dish names. We might use dictionaries for translations (e.g. “पनीर” -> “cheese/dairy”). The UI should allow language switching, e.g. showing detected Hindi dish names in English terms.  
-- **Database:** We can create a `Dishes` collection with fields `{ name: "Aloo Tikki Chaat", allergens: ["peanuts","milk"], languages: {...} }`. We might crowdsource this info or pre-load recipes from nutrition databases (though many Indian street foods aren’t in standard DBs, so custom data entry is needed). The goal is to warn about typical allergens (even without exact ingredients).  
+## Correctness Properties
 
-# Personal Allergy Profile  
-- **User selections:** On signup or in settings, the user can tick off allergies: **Peanut, Tree Nuts, Milk/Dairy, Eggs, Wheat/Gluten, Soy, Seafood, Sesame, etc.** We include all FSSAI-listed allergens【3†L830-L838】 and common ones like sesame (often missing in packages). This is stored in the user’s profile (as in the `Users` example above).  
-- **Usage:** Every scanner feature compares product/food ingredients to this profile. For example, if the profile has “gluten” checked, the Food Scanner flags any wheat flour. For street food, a cuisine library might say “contains gluten” for anything with dough or sev. Even if not listed, we err on caution (yellow) for possible cross-contamination【35†L31-L40】.  
-- **UI:** The app has a clean “Profile” page (checkboxes or toggles for allergens). We’ll include an “Other” field for uncommon allergies. These settings persist locally and in the backend DB.  
+*A property is a characteristic or behavior that should hold true across all valid executions of a system—essentially, a formal statement about what the system should do. Properties serve as the bridge between human-readable specifications and machine-verifiable correctness guarantees.*
 
-# Local Language Support  
-- **Importance:** India’s diverse languages mean labels and menus may be in Hindi, Punjabi, Tamil, Bengali, etc. We’ll localize the UI (buttons and instructions) into multiple languages. For example, if the user’s phone language is Hindi, the app shows interface text in Hindi (“सुरक्षित”, “जागरूक” alerts). This enhances usability.  
-- **OCR languages:** We rely on Google’s ML Kit text recognizer (supports Hindi and Marathi【30†L284-L292】) and Cloud Vision (supports Tamil `ta`, Telugu `te`, Bengali `bn`, etc.【47†L1-L4】【46†L516-L524】). Where ML Kit lacks, Tesseract OCR with trained models could be an alternative for scripts like Tamil or Punjabi (Gurmukhi). In worst cases, we allow manual entry: a user can type a dish name in any language for lookup.  
-- **UI examples:** The food scanner results and alerts should appear in the local language if possible (e.g. “यह आहार सुरक्षित है” for Safe). We’ll use standard i18n libraries (e.g. Flutter Intl or i18next) and possibly integrate Google Translate API for dynamic text (with caution). Key UI labels (buttons, warnings) will be pre-translated.  
-- **Voice support (optional):** For emergency mode or scanning, we might add voice feedback in the user’s language (using Android/iOS TTS in Hindi/Punjabi etc.), especially helpful in a panic.  
 
-# Emergency Mode (Advanced)  
-- **Goals:** When a severe allergy reaction occurs, the user may panic, forget steps, or be alone. The “Emergency” feature is a separate mode to guide them calmly. It should provide step-by-step first aid, contact help, and share info automatically. The design needs to minimize user input (just a big “EMERGENCY” button and voice prompts).  
-- **Guidelines:** Per medical guidelines, intramuscular epinephrine (adrenaline) is the first-line treatment for anaphylaxis【25†L619-L625】. Our assistant will first **triage** symptoms: e.g. it might ask “Is the person breathing normally? Are they having trouble speaking?” based on Mayo Clinic advice. If symptoms indicate anaphylaxis (difficulty breathing, swelling), the assistant instructs to use epinephrine if available【49†L329-L337】. Then, it tells the user to lie down, loosen clothing, and cover them【49†L329-L337】, as recommended first-aid. We’ll cite that first-aid steps include lying flat and helping with the injector【49†L329-L337】. It will also emphasize calling emergency services (112 in India) immediately.  
-- **LLM “Health Copilot”:** This advanced assistant will use a medical LLM (e.g. GPT-4o with a health system prompt) to analyze symptoms and guide actions. However, we must enforce *safety filters*: a 2026 study found that publicly-available chatbots gave unsafe medical advice 5–43% of the time【28†L89-L98】, so our LLM must include strict constraints. For example, it should never prescribe medication dosages beyond those already in the profile. The system prompt will include rules (e.g. “Do not recommend any new medication beyond known epinephrine use, always advise to seek professional care”). We will also use an approach like chain-of-thought with guardrails (e.g. if the user is alone, ask if the assistant should alert a contact or call an ambulance).  
-- **Features:** The Emergency mode UI may include a “Call 112” button, a “Show medical ID” screen (displaying user’s allergies and conditions to first responders), and an auto-text to emergency contacts with current GPS location. It will continuously ask the user simple yes/no questions (“Is the patient conscious? Are lips/throat swollen?”) and adjust guidance. If AI suggests a hospital is needed, it can offer mapping to the nearest hospital via GPS (using Google Maps API).  
-- **Example flow:** In Emergency mode, the user triggers the feature. A calm voice (LLM) says: *“I see you’re having a severe reaction. Stay with the patient. First, do you have an epinephrine injector with you?”* (User: “Yes, I do.”) *“Great, use it now on the outer thigh.”* (After injection) *“Lay the person down on their back and elevate the legs. Loosen tight clothing. Keep them warm. I have alerted [contact name].”* (Meanwhile, the app texts the emergency contact with a link to the Live Location and a message like “John is having an allergic reaction and needs help”). These steps follow Mayo Clinic’s first aid list【49†L329-L337】. The assistant reminds the user to call ambulance: *“Can you call 112 now?”* and can even dial automatically.  
-- **Technical design:** This mode can be implemented as a stateful chat powered by the LLM (with text and optional voice) plus a finite-state controller to ensure all necessary steps occur. The backend uses the same user profile and location APIs. We would implement preset prompts and lists (based on [25] and [49]) rather than purely free-form chat, to avoid hallucinations.  
-- **Safety measures:** The LLM must clarify it’s not a doctor and only provides guidance, disclaiming liability. We’ll emphasize fact-checking and minimal medical advice, since research warns of “serious patient harm” from LLMs making unchecked diagnoses【28†L89-L98】. In practice, the assistant says things like *“I am an AI assistant, not a doctor, but based on your answers, these are recommended steps…”*. We also store no new medical data beyond user profile selections.  
+### Property 1: Allergen Matching Consistency
 
-# Tech Stack Summary  
-- **App:** Cross-platform framework (Flutter/React Native). Uses camera APIs (ZXing/ML Kit) and HTTP for backend. Uses i18n libraries for multi-language UI.  
-- **Backend:** Node.js/Express or Python Flask on a cloud server (Heroku/AWS/Azure). Connects to:  
-  - **Databases:** MongoDB or Firebase Firestore storing Users, Products, Dishes.  
-  - **APIs:** Calls Google Cloud Vision (OCR), OpenFoodFacts (product data), and our LLM engine (e.g. OpenAI API with GPT-4o).  
-- **LLM Config:** A prompt design with medical-safe guidelines, along with fallback rules. Consider deploying an existing medical LLM (e.g. Med-PaLM 2) if available, or GPT-4o with very restricted prompt.  
-- **Emergency UI:** Simple dedicated screens. Possibly a split-screen: left side showing instructions, right side showing chat (or voice). Offer quick access buttons for “Use Epinephrine” or “Call Emergency”.  
-- **Deployment:** Use CI/CD to release app to Google Play and Apple App Store. Ensure compliance with Indian IT/health data rules (user consent, data encryption).  
+*For any* ingredient list or dish list and any user allergen profile, when the allergen matcher compares them, all ingredients or dishes containing user allergens should be identified and included in the matched allergens list.
 
-**Connected sources:** The design follows Indian food-labeling laws【3†L830-L838】【35†L31-L40】, leverages open ingredient APIs【11†L139-L147】, and aligns with pediatric anaphylaxis guidelines (epinephrine use)【25†L619-L625】【49†L329-L337】. It also integrates findings on AI safety in healthcare【28†L89-L98】 to guide our LLM strategy. All features above aim to comprehensively address allergy management for Indian users, from detection to emergency response. 
+**Validates: Requirements 1.3, 2.4, 3.4**
 
+### Property 2: Safety Level Determination
+
+*For any* allergen match result, the safety level should be 'unsafe' if any allergens match, 'safe' if no allergens match, and 'caution' for potential cross-contamination or uncertain matches.
+
+**Validates: Requirements 1.4, 2.5, 3.5**
+
+### Property 3: Barcode Query Triggering
+
+*For any* detected barcode value, the scanner should trigger a database query with that exact barcode value.
+
+**Validates: Requirements 1.2**
+
+### Property 4: OCR Fallback Activation
+
+*For any* barcode lookup that returns no results or null, the system should automatically activate OCR mode.
+
+**Validates: Requirements 1.5**
+
+### Property 5: Ingredient Parsing Completeness
+
+*For any* extracted text containing ingredient lists, the parser should identify and extract all ingredients separated by commas, semicolons, or other standard delimiters.
+
+**Validates: Requirements 2.3**
+
+### Property 6: Dish Name Extraction
+
+*For any* menu text containing dish names, the parser should identify and extract dish names based on menu formatting patterns.
+
+**Validates: Requirements 3.2**
+
+### Property 7: Dish Allergen Query
+
+*For any* identified dish name, the system should query the allergen database for that dish's allergen information.
+
+**Validates: Requirements 3.3**
+
+### Property 8: Profile Data Round-Trip
+
+*For any* user profile containing allergen list and emergency contact, storing then retrieving the profile should produce an equivalent profile with all fields intact (userId, allergens array, emergencyContact).
+
+**Validates: Requirements 4.2, 4.3, 4.4, 9.1, 9.4**
+
+### Property 9: FSSAI Allergen Acceptance
+
+*For any* FSSAI-listed allergen (peanut, tree nuts, milk, eggs, wheat, gluten, soy, seafood, sesame), the user profile should accept and store that allergen in the allergen list.
+
+**Validates: Requirements 4.1**
+
+### Property 10: UI Localization Consistency
+
+*For any* supported language preference and any UI element (alerts, instructions, labels), the displayed text should be in the user's preferred language.
+
+**Validates: Requirements 5.1, 5.3, 5.4**
+
+### Property 11: Language Preference Update Reactivity
+
+*For any* language preference change, all currently visible UI elements should update to display text in the new language.
+
+**Validates: Requirements 5.5**
+
+### Property 12: Emergency Contact Alert Delivery
+
+*For any* GPS location and any emergency contact in the user profile, when emergency mode is activated, an alert containing the location should be sent to that emergency contact.
+
+**Validates: Requirements 6.4**
+
+### Property 13: Medical ID Completeness
+
+*For any* user profile with allergens, the medical ID display should include all allergens from the profile.
+
+**Validates: Requirements 6.5**
+
+### Property 14: API Fallback Chain
+
+*For any* barcode query where OpenFoodFacts returns no results, the system should query Fitterfly Nutrition API as the next attempt.
+
+**Validates: Requirements 7.2**
+
+### Property 15: Product Data Field Extraction
+
+*For any* product data retrieved from external APIs, the system should extract and store the ingredient list and allergen declarations if present in the source data.
+
+**Validates: Requirements 7.3**
+
+### Property 16: FSSAI Oil Exemption
+
+*For any* product containing oils from allergenic sources (e.g., peanut oil, soy oil), the allergen matcher should apply FSSAI exemption rules and not flag these as allergen matches unless the oil is unrefined.
+
+**Validates: Requirements 7.5**
+
+### Property 17: API Response Completeness
+
+*For any* successful API request to /scan/barcode or /scan/image, the response should contain all required fields: product name (or dishes), ingredients (or extracted text), and allergen information.
+
+**Validates: Requirements 8.2, 8.4**
+
+### Property 18: Cache Persistence Round-Trip
+
+*For any* product or dish data cached by the system, retrieving that data from cache should produce equivalent data with all fields intact (barcode/dishId, name, ingredients/allergens, metadata).
+
+**Validates: Requirements 9.2, 9.3**
+
+### Property 19: Offline Cache Access
+
+*For any* product that was previously scanned and cached, when the app is offline, the scanner should be able to retrieve and display that product's cached data.
+
+**Validates: Requirements 9.5**
+
+### Property 20: Emergency Disclaimer Inclusion
+
+*For any* instruction or guidance generated by the Emergency Assistant, the output should include a disclaimer to seek professional medical help.
+
+**Validates: Requirements 10.3**
+
+## Error Handling
+
+### Barcode Scanning Errors
+
+**Camera Access Denied:**
+- Display user-friendly message explaining camera permission requirement
+- Provide link to app settings to enable camera permission
+- Offer alternative OCR mode for manual ingredient entry
+
+**Barcode Not Detected:**
+- Show visual guidance for proper barcode positioning
+- Provide manual barcode entry option
+- Automatically switch to OCR mode after timeout
+
+**Network Errors During Barcode Lookup:**
+- Check local cache first before showing error
+- Display offline mode indicator
+- Queue request for retry when connection restored
+- Show last known product information if available
+
+### OCR Processing Errors
+
+**Image Quality Issues:**
+- Provide real-time feedback on image clarity
+- Suggest better lighting or closer positioning
+- Allow multiple image captures for better results
+
+**Text Extraction Failures:**
+- Fall back to manual ingredient entry
+- Provide template for common ingredient formats
+- Save image for later processing when connection improves
+
+**Language Detection Errors:**
+- Allow manual language selection
+- Support mixed-language text extraction
+- Provide feedback when unsupported script detected
+
+### API Integration Errors
+
+**External API Timeouts:**
+- Implement exponential backoff retry logic
+- Fall back to secondary API within 3 seconds
+- Cache partial results to minimize data loss
+- Display user-friendly timeout message
+
+**Rate Limiting:**
+- Implement request queuing with priority
+- Cache aggressively to reduce API calls
+- Display estimated wait time to user
+- Offer offline mode with cached data
+
+**Invalid API Responses:**
+- Validate response schema before processing
+- Log malformed responses for debugging
+- Fall back to alternative data source
+- Display generic error without exposing technical details
+
+### Data Persistence Errors
+
+**Storage Quota Exceeded:**
+- Implement LRU cache eviction policy
+- Prioritize user profile and recent scans
+- Notify user of storage limitations
+- Offer option to clear old scan history
+
+**Sync Failures:**
+- Queue changes for background sync
+- Maintain local-first data model
+- Resolve conflicts with last-write-wins strategy
+- Display sync status indicator
+
+### Emergency Mode Errors
+
+**Location Services Disabled:**
+- Prompt user to enable location services
+- Proceed with emergency guidance without location
+- Display manual location entry option
+- Include location permission in onboarding
+
+**Emergency Contact Not Set:**
+- Display prominent warning during emergency activation
+- Offer quick contact entry flow
+- Proceed with first aid guidance regardless
+- Remind user to set contact after emergency
+
+**LLM API Failures:**
+- Fall back to pre-defined emergency instructions
+- Display offline emergency guide
+- Log failure for monitoring
+- Ensure core emergency features work without LLM
+
+### Validation Errors
+
+**Invalid User Input:**
+- Provide inline validation feedback
+- Suggest corrections for common mistakes
+- Prevent submission of invalid data
+- Display clear error messages in user's language
+
+**Malformed Allergen Data:**
+- Sanitize and normalize allergen names
+- Map common variations to standard terms
+- Warn user about unrecognized allergens
+- Allow custom allergen entry with confirmation
+
+## Testing Strategy
+
+### Dual Testing Approach
+
+The testing strategy employs both unit testing and property-based testing to ensure comprehensive coverage:
+
+- **Unit Tests**: Verify specific examples, edge cases, error conditions, and integration points between components
+- **Property Tests**: Verify universal properties across all inputs through randomized testing
+
+Both approaches are complementary and necessary. Unit tests catch concrete bugs in specific scenarios, while property tests verify general correctness across a wide input space.
+
+### Property-Based Testing Configuration
+
+**Library Selection:**
+- **JavaScript/TypeScript**: fast-check
+- **Python**: Hypothesis
+- **Flutter/Dart**: test_api with custom generators
+
+**Test Configuration:**
+- Minimum 100 iterations per property test (due to randomization)
+- Each property test must reference its design document property
+- Tag format: `// Feature: packaged-food-scanner, Property {number}: {property_text}`
+
+**Property Test Implementation:**
+- Each correctness property must be implemented by a single property-based test
+- Tests should generate random valid inputs (allergen lists, ingredient lists, user profiles)
+- Tests should verify the property holds for all generated inputs
+- Tests should shrink failing cases to minimal counterexamples
+
+### Unit Testing Focus
+
+Unit tests should focus on:
+- Specific examples demonstrating correct behavior (e.g., scanning a known barcode)
+- Edge cases (empty ingredient lists, special characters, very long lists)
+- Error conditions (network failures, invalid API responses, missing data)
+- Integration between components (scanner → API → matcher → UI)
+- Hardware interactions (camera, GPS) using mocks
+
+Avoid writing too many unit tests for scenarios that property tests already cover comprehensively.
+
+### Test Coverage Areas
+
+**Barcode Scanning:**
+- Unit: Test specific barcode formats (EAN-13, UPC-A), camera initialization, error states
+- Property: Verify all barcodes trigger queries, all results produce safety alerts
+
+**OCR Processing:**
+- Unit: Test specific ingredient label formats, multi-language examples, image quality edge cases
+- Property: Verify all extracted text is parsed, all ingredients are identified
+
+**Allergen Matching:**
+- Unit: Test specific allergen combinations, FSSAI exemptions, edge cases
+- Property: Verify all user allergens are matched, safety levels are consistent
+
+**Profile Management:**
+- Unit: Test profile creation, update flows, validation errors
+- Property: Verify round-trip persistence, all FSSAI allergens accepted
+
+**Localization:**
+- Unit: Test specific language translations, script rendering
+- Property: Verify all UI elements localized for all supported languages
+
+**Emergency Mode:**
+- Unit: Test specific emergency scenarios, contact alert delivery, GPS edge cases
+- Property: Verify all profiles produce medical IDs, all locations trigger alerts
+
+**API Integration:**
+- Unit: Test specific API responses, error handling, timeout scenarios
+- Property: Verify all requests produce responses with required fields, fallback chain works
+
+**Caching:**
+- Unit: Test cache eviction, offline access, sync conflicts
+- Property: Verify round-trip persistence, offline access for all cached items
+
+### Integration Testing
+
+- Test end-to-end flows: barcode scan → API query → allergen match → alert display
+- Test offline scenarios with cached data
+- Test emergency mode activation and contact alerting
+- Test language switching across all screens
+- Test API fallback chains with simulated failures
+
+### Performance Testing
+
+- Barcode detection latency: < 500ms
+- OCR processing time: < 3 seconds for standard images
+- API response time: < 2 seconds for cached products
+- Profile sync time: < 1 second
+- Emergency mode activation: < 500ms
+
+### Security Testing
+
+- Validate all user inputs to prevent injection attacks
+- Test API authentication and authorization
+- Verify secure storage of user profiles
+- Test emergency contact data privacy
+- Validate LLM prompt injection prevention
