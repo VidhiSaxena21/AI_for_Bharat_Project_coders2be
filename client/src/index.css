@@ -1,0 +1,111 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-sans: 'DM Sans', sans-serif;
+    --font-display: 'Plus Jakarta Sans', sans-serif;
+
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+    
+    /* Soft Teal/Blue Primary */
+    --primary: 187 73% 43%;
+    --primary-foreground: 0 0% 100%;
+    
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    
+    --accent: 187 73% 90%;
+    --accent-foreground: 187 73% 20%;
+    
+    /* Semantic Colors */
+    --destructive: 350 89% 60%;
+    --destructive-foreground: 210 40% 98%;
+    
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 187 73% 43%;
+    
+    --radius: 1rem;
+    
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 47.4% 11.2%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 47.4% 11.2%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased min-h-screen selection:bg-primary/30;
+    font-family: var(--font-sans);
+    background-image: 
+      radial-gradient(at 0% 0%, hsla(187, 73%, 90%, 0.5) 0px, transparent 50%),
+      radial-gradient(at 100% 100%, hsla(210, 40%, 96%, 1) 0px, transparent 50%);
+    background-attachment: fixed;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    @apply tracking-tight font-bold;
+  }
+}
+
+@layer utilities {
+  .glass-card {
+    @apply bg-white/80 backdrop-blur-xl border border-white/20 shadow-xl shadow-black/5;
+  }
+  
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-blue-500;
+  }
+
+  .text-gradient-danger {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-destructive to-orange-500;
+  }
+
+  /* Scan line animation */
+  .scan-line {
+    position: absolute;
+    width: 100%;
+    height: 4px;
+    background: theme('colors.primary.DEFAULT');
+    box-shadow: 0 0 15px theme('colors.primary.DEFAULT');
+    animation: scan 2.5s ease-in-out infinite alternate;
+    z-index: 10;
+  }
+
+  @keyframes scan {
+    0% { top: 0%; opacity: 0; }
+    10% { opacity: 1; }
+    90% { opacity: 1; }
+    100% { top: 100%; opacity: 0; }
+  }
+
+  /* Pulse red for emergency */
+  .emergency-pulse {
+    animation: emergencyPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes emergencyPulse {
+    0%, 100% {
+      background-color: theme('colors.destructive.DEFAULT');
+      box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+    }
+    50% {
+      background-color: #f87171;
+      box-shadow: 0 0 0 20px rgba(239, 68, 68, 0);
+    }
+  }
+}

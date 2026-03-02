@@ -1,0 +1,328 @@
+Build a full-stack production-ready web application using Next.js 14 (App Router) and Tailwind CSS.
+
+App Name:
+
+AllerGuard – AI Food Allergy Safety Assistant
+
+Tagline:
+Scan. Detect. Stay Safe.
+
+This is a hackathon-ready AI-powered web application that helps users detect food allergens from packaged food labels, restaurant menus, and street food boards using OCR and an intelligent allergen detection engine.
+
+The project must be:
+
+Fully functional
+
+Clean modern UI
+
+Mobile responsive
+
+Structured professionally
+
+Ready for deployment on Vercel
+
+Well-commented
+
+Environment variable ready
+
+🏗 TECH STACK REQUIREMENTS
+
+Next.js 14 (App Router)
+
+Tailwind CSS
+
+Next.js API Routes (Node.js runtime – no separate Express server)
+
+Tesseract.js for OCR
+
+MongoDB Atlas using Mongoose
+
+TypeScript preferred
+
+Clean modular structure
+
+📂 REQUIRED FEATURES
+1️⃣ Landing Page (/)
+
+Design a modern SaaS-style landing page including:
+
+App name: AllerGuard
+
+Tagline: Scan. Detect. Stay Safe.
+
+Short description explaining AI-powered allergy detection
+
+CTA buttons:
+
+Scan Food
+
+Emergency Mode
+
+Soft gradient background
+
+Professional hackathon UI
+
+Fully responsive
+
+2️⃣ Scan Page (/scan)
+
+Include:
+
+Image upload (drag & drop support)
+
+Allergy selection checkboxes:
+
+Peanut
+
+Milk
+
+Gluten
+
+Soy
+
+Eggs
+
+Tree Nuts
+
+Scan button
+
+Loading animation
+
+Result card showing:
+
+SAFE (green)
+
+CAUTION (yellow)
+
+NOT SAFE (red)
+
+Display matched allergen if unsafe
+
+3️⃣ OCR Processing
+
+Use Tesseract.js to:
+
+Extract text from uploaded image
+
+Convert to lowercase
+
+Clean and sanitize text
+
+Add comments explaining:
+
+OCR is an AI-based text recognition model
+
+4️⃣ Backend API Route (/api/scan)
+
+Create POST API route that:
+
+Accepts:
+{
+extractedText: string,
+allergies: string[],
+language: string
+}
+
+Implements allergen detection logic:
+
+Logic:
+
+If extracted text contains any selected allergen → NOT SAFE
+
+If extracted text contains "may contain" or "processed in facility" → CAUTION
+
+Else → SAFE
+
+Return:
+
+{
+status: "SAFE" | "CAUTION" | "NOT SAFE",
+matchedAllergen: string | null,
+message: localizedMessage
+}
+
+5️⃣ 🌍 Multi-Language Support
+
+Store user language preference:
+
+Options:
+
+English (en)
+
+Hindi (hi)
+
+Create localized response object:
+
+Example:
+
+English:
+SAFE → "This food is safe for you."
+NOT SAFE → "This food contains allergens."
+CAUTION → "This food may contain allergens."
+
+Hindi:
+SAFE → "यह भोजन आपके लिए सुरक्षित है।"
+NOT SAFE → "इस भोजन में एलर्जी कारक मौजूद हैं।"
+CAUTION → "इस भोजन में एलर्जी कारक हो सकते हैं।"
+
+API must return response based on selected language.
+
+No external translation API.
+Use predefined translation object.
+
+6️⃣ Emergency Mode Page (/emergency)
+
+Create urgent but clean UI including:
+
+Large red SOS button
+
+Allergy first aid steps:
+
+Stay calm
+
+Take antihistamine if available
+
+Use epinephrine if prescribed
+
+Seek medical help immediately
+
+Call button logic:
+
+If user has saved emergencyContact:
+→ Call that number
+
+Else:
+→ Call 112 (India National Emergency Number)
+
+Use:
+
+window.open(tel:number)
+
+Add explanatory comments in code.
+
+7️⃣ Profile Page (/profile)
+
+Allow user to:
+
+Enter name
+
+Select allergies
+
+Set preferred language (English / Hindi)
+
+Enter emergency contact number
+
+Save to MongoDB.
+
+On load:
+
+Fetch saved preferences
+
+8️⃣ MongoDB Schema
+
+Create User schema:
+
+name: string
+allergies: string[]
+languagePreference: "en" | "hi"
+emergencyContact: string
+createdAt: Date
+
+Optional ScanHistory schema:
+userId
+extractedText
+result
+matchedAllergen
+timestamp
+
+9️⃣ Folder Structure
+
+Use clean architecture:
+
+app/
+page.tsx
+scan/page.tsx
+emergency/page.tsx
+profile/page.tsx
+api/scan/route.ts
+
+components/
+Navbar.tsx
+ResultCard.tsx
+Loader.tsx
+
+lib/
+db.ts
+models/User.ts
+
+🔟 Architecture Documentation
+
+Add clear comments explaining:
+
+Next.js fullstack architecture
+
+API routes run on Node.js runtime
+
+OCR is AI-based component
+
+Allergen engine is intelligent classification logic
+
+Can be upgraded to NLP-based ML model in future
+
+🎨 UI Requirements
+
+Modern
+
+Soft shadows
+
+Rounded corners
+
+Clean typography
+
+Smooth animations
+
+Mobile responsive
+
+Accessible color coding
+
+🔐 Environment Variables
+
+Use:
+
+MONGODB_URI=
+NEXT_PUBLIC_APP_NAME=AllerGuard
+
+No hardcoded secrets.
+
+🚀 Deployment
+
+Ensure app runs with:
+
+npm install
+npm run dev
+
+Must be deployable directly on Vercel.
+
+🎯 FINAL REQUIREMENT
+
+Generate:
+
+Complete working Next.js project
+
+All pages
+
+API routes
+
+Database connection
+
+OCR integration
+
+Emergency fallback logic
+
+Multi-language logic
+
+Production-quality structure
+
+Hackathon-ready UI
+
+Code must be clean, modular, and fully functional.
