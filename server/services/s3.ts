@@ -28,7 +28,9 @@ export async function uploadToS3(file: Express.Multer.File): Promise<string> {
     ACL: "public-read", // Ensure bucket policy allows public read if URLs are public
   });
 
+  console.log(`Attempting S3 upload: ${fileName} to bucket ${BUCKET_NAME}`);
   await s3Client.send(command);
-
-  return `https://${BUCKET_NAME}.s3.${process.env.AWS_REGION || "us-east-1"}.amazonaws.com/${fileName}`;
+  const url = `https://${BUCKET_NAME}.s3.${process.env.AWS_REGION || "us-east-1"}.amazonaws.com/${fileName}`;
+  console.log(`S3 upload successful: ${url}`);
+  return url;
 }

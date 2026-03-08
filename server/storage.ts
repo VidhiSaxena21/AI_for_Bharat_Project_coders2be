@@ -7,7 +7,7 @@ import {
   type UpdateUserRequest,
   type ScanHistory,
   type InsertScanHistory
-} from "@shared/schema";
+} from "../shared/schema";
 import { eq } from "drizzle-orm";
 
 export interface IStorage {
