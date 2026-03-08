@@ -17,10 +17,13 @@ export const scanHistory = pgTable("scan_history", {
   extractedText: text("extracted_text").notNull(),
   result: text("result").notNull(), // SAFE | CAUTION | NOT SAFE
   matchedAllergen: text("matched_allergen"),
+  documentUrl: text("document_url"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
+export const insertUserSchema = createInsertSchema(users, {
+  allergies: z.array(z.string())
+}).omit({ id: true, createdAt: true });
 export const insertScanHistorySchema = createInsertSchema(scanHistory).omit({ id: true, createdAt: true });
 
 export type User = typeof users.$inferSelect;

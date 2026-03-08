@@ -63,6 +63,36 @@ export const api = {
         200: z.array(z.custom<typeof scanHistory.$inferSelect>()),
       }
     }
+  },
+  chat: {
+    message: {
+      method: 'POST' as const,
+      path: '/api/chat' as const,
+      input: z.object({
+        message: z.string()
+      }),
+      responses: {
+        200: z.object({
+          reply: z.string()
+        }),
+        400: errorSchemas.validation,
+        500: errorSchemas.internal,
+      }
+    }
+  },
+  upload: {
+    document: {
+      method: 'POST' as const,
+      path: '/api/upload' as const,
+      input: z.any(),
+      responses: {
+        200: z.object({
+          url: z.string()
+        }),
+        400: errorSchemas.validation,
+        500: errorSchemas.internal,
+      }
+    }
   }
 };
 

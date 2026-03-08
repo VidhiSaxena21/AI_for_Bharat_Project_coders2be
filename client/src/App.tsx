@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import { Layout } from "@/components/Layout";
+import { AllergyChatbot } from "@/components/AllergyChatbot";
 
 // Pages
 import Home from "@/pages/Home";
@@ -32,6 +33,7 @@ function App() {
       <TooltipProvider>
         <Toaster />
         <Router />
+        <AllergyChatbot />
       </TooltipProvider>
     </QueryClientProvider>
   );

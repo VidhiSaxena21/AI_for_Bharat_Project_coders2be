@@ -4,6 +4,11 @@ import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { insertUserSchema } from "@shared/schema";
+import multer from "multer";
+import { uploadToS3 } from "./services/s3";
+import { chatWithAllergyAssistant } from "./services/bedrock";
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 export async function registerRoutes(
   httpServer: Server,
@@ -122,6 +127,36 @@ export async function registerRoutes(
     }
     const history = await storage.getUserScanHistory(userId);
     res.json(history);
+  });
+
+  app.post(api.chat.message.path, async (req, res) => {
+    try {
+      const input = api.chat.message.input.parse(req.body);
+      const reply = await chatWithAllergyAssistant(input.message);
+      res.json({ reply });
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({
+          message: err.errors[0].message,
+          field: err.errors[0].path.join('.'),
+        });
+      }
+      console.error("Chat API error:", err);
+      res.status(500).json({ message: "Internal server error connecting to AI assistant." });
+    }
+  });
+
+  app.post(api.upload.document.path, upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file provided" });
+      }
+      const url = await uploadToS3(req.file);
+      res.json({ url });
+    } catch (err) {
+      console.error("Upload to S3 error:", err);
+      res.status(500).json({ message: "Internal server error while uploading file." });
+    }
   });
 
   return httpServer;
